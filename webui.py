@@ -565,10 +565,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def check_admin(self):
         """Prueft Admin-Token. Gibt True zurueck wenn autorisiert.
-        Lokal (SQLite) ist immer autorisiert (kein Token noetig).
-        Auf Prod (MariaDB) muss Bearer-Token stimmen."""
-        if DB_BACKEND == "sqlite":
-            return True
+        Ohne ADMIN_TOKEN ist alles offen (lokal/dev).
+        Mit ADMIN_TOKEN muss Bearer-Token stimmen."""
         if not ADMIN_TOKEN:
             return True  # kein Token konfiguriert = offen
         auth = self.headers.get("Authorization", "")
