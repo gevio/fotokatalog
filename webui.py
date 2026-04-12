@@ -22,6 +22,7 @@ DB_BACKEND = "sqlite"
 MARIADB_CONFIG = {}
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 API_KEY = None
+ADMIN_TOKEN = None
 
 
 class DBRow(dict):
@@ -106,6 +107,24 @@ def load_api_key():
                     continue
                 if "ANTHROPIC_API_KEY" in line and "=" in line:
                     API_KEY = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    return
+
+
+def load_admin_token():
+    """Laedt FOTOKATALOG_ADMIN_TOKEN aus ENV oder .env Datei."""
+    global ADMIN_TOKEN
+    ADMIN_TOKEN = os.environ.get("FOTOKATALOG_ADMIN_TOKEN")
+    if ADMIN_TOKEN:
+        return
+    env_path = os.path.join(SCRIPT_DIR, ".env")
+    if os.path.exists(env_path):
+        with open(env_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "FOTOKATALOG_ADMIN_TOKEN" in line and "=" in line:
+                    ADMIN_TOKEN = line.split("=", 1)[1].strip().strip('"').strip("'")
                     return
 
 def get_db():
@@ -544,6 +563,27 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
 
+    def check_admin(self):
+        """Prueft Admin-Token. Gibt True zurueck wenn autorisiert.
+        Lokal (SQLite) ist immer autorisiert (kein Token noetig).
+        Auf Prod (MariaDB) muss Bearer-Token stimmen."""
+        if DB_BACKEND == "sqlite":
+            return True
+        if not ADMIN_TOKEN:
+            return True  # kein Token konfiguriert = offen
+        auth = self.headers.get("Authorization", "")
+        if auth.startswith("Bearer ") and auth[7:] == ADMIN_TOKEN:
+            return True
+        return False
+
+    def send_unauthorized(self):
+        body = json.dumps({"ok": False, "error": "Admin-Token erforderlich"}).encode("utf-8")
+        self.send_response(401)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", len(body))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
@@ -650,6 +690,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     self.send_json({"ok": False})
             except Exception as e:
                 self.send_json({"ok": False, "error": str(e)})
+        elif path == "/api/auth/check":
+            is_admin = self.check_admin()
+            self.send_json({"ok": True, "admin": is_admin, "auth_required": bool(ADMIN_TOKEN)})
         else:
             self.send_response(404)
             self.end_headers()
@@ -659,6 +702,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         raw = self.rfile.read(length) if length > 0 else b""
         data = json.loads(raw) if raw else {}
+
+        # Admin-Token pruefen fuer alle schreibenden Endpoints
+        # Ausnahme: /api/photo/{id} mit nur rating/favorite auf MariaDB
+        # (geht ueber user_ratings, kein Admin noetig)
+        is_user_rating = (
+            parsed.path.startswith("/api/photo/") and
+            DB_BACKEND == "mariadb" and
+            set(data.keys()) <= {"rating", "favorite"}
+        )
+        if not is_user_rating and not self.check_admin():
+            self.send_unauthorized()
+            return
 
         if parsed.path.startswith("/api/postcard/"):
             photo_id = int(parsed.path.split("/")[3])
@@ -757,9 +812,10 @@ if __name__ == "__main__":
             print("MariaDB-Verbindung fehlgeschlagen: " + str(e))
             exit(2)
 
-    # DB-Migration und API-Key
+    # DB-Migration, API-Key und Admin-Token
     ensure_db_columns()
     load_api_key()
+    load_admin_token()
 
     server = http.server.HTTPServer(("127.0.0.1", args.port), Handler)
     url = "http://localhost:" + str(args.port)
@@ -772,6 +828,7 @@ if __name__ == "__main__":
     else:
         print("  MariaDB: {user}@{host}:{port}/{database}".format(**MARIADB_CONFIG))
     print("  API-Key: " + ("geladen" if API_KEY else "NICHT GEFUNDEN (.env oder $ANTHROPIC_API_KEY)"))
+    print("  Admin-Token: " + ("aktiv" if ADMIN_TOKEN else "NICHT GESETZT (alle POST-Requests offen!)"))
     print("  Beenden mit Ctrl+C")
     print("")
 

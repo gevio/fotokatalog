@@ -138,6 +138,11 @@ button { font-family: inherit; cursor: pointer; }
   border-radius: 4px; border: 2px solid rgba(255,255,255,.7); background: rgba(0,0,0,.2);
   cursor: pointer; display: none; appearance: none; -webkit-appearance: none; }
 .card-check:checked { background: var(--accent); border-color: var(--accent); }
+
+.auth-badge { font-size: 11px; padding: 2px 10px; border-radius: 6px; cursor: pointer;
+  font-weight: 600; margin-left: auto; user-select: none; }
+.auth-badge.admin { background: var(--ok-bg); color: var(--ok); }
+.auth-badge.readonly { background: var(--warn-bg); color: var(--warn); }
 .card-check:checked::after { content: '\2713'; color: #fff; display: block; text-align: center;
   font-size: 14px; line-height: 18px; font-weight: 700; }
 .select-mode .card-check { display: block; }
@@ -187,6 +192,7 @@ button { font-family: inherit; cursor: pointer; }
   <div class="header">
     <h1>Fotokatalog</h1>
     <div class="stats" id="hstats"></div>
+    <span id="auth-badge" class="auth-badge readonly" onclick="showTokenDialog()" title="Klick: Token eingeben"></span>
   </div>
 
   <div class="sidebar">
@@ -263,6 +269,49 @@ button { font-family: inherit; cursor: pointer; }
 <script>
 var photos = [], stats = {}, filters = {}, curView = 'grid', selId = null, map = null, markers = [], dtimer;
 var selectMode = false, selectedIds = new Set();
+var adminToken = localStorage.getItem('fk_admin_token') || '';
+var isAdmin = false;
+
+// Auth-Header fuer schreibende Requests
+function authHeaders(extra) {
+  var h = Object.assign({'Content-Type':'application/json'}, extra || {});
+  if (adminToken) h['Authorization'] = 'Bearer ' + adminToken;
+  return h;
+}
+
+// Admin-Fetch: wie fetch, aber mit Auth-Header. Bei 401 → Token-Dialog
+async function adminFetch(url, opts) {
+  opts = opts || {};
+  opts.headers = authHeaders(opts.headers);
+  var res = await fetch(url, opts);
+  if (res.status === 401) {
+    showTokenDialog();
+    throw new Error('Admin-Token erforderlich');
+  }
+  return res;
+}
+
+function showTokenDialog() {
+  var tok = prompt('Admin-Token eingeben:');
+  if (tok) {
+    adminToken = tok.trim();
+    localStorage.setItem('fk_admin_token', adminToken);
+    checkAuth();
+  }
+}
+
+async function checkAuth() {
+  try {
+    var res = await fetch('/api/auth/check', { headers: authHeaders() });
+    var d = await res.json();
+    isAdmin = d.admin;
+    var badge = document.getElementById('auth-badge');
+    if (badge) {
+      badge.textContent = isAdmin ? 'Admin' : (d.auth_required ? 'Read-Only' : 'Offen');
+      badge.className = 'auth-badge ' + (isAdmin ? 'admin' : 'readonly');
+    }
+  } catch(e) { isAdmin = false; }
+}
 var detailMap = null, detailMapTimer = null;
 
 function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -341,7 +390,7 @@ async function bulkAction(action) {
   var ids = Array.from(selectedIds);
   if (!ids.length) return;
   var hidden = action === 'hide';
-  await fetch('/api/bulk', { method:'POST',
+  await adminFetch('/api/bulk', { method:'POST',
     headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ids: ids, hidden: hidden}) });
   selectMode = false; selectedIds.clear();
@@ -352,7 +401,7 @@ async function bulkAction(action) {
 }
 
 async function hidePhoto(id, hide) {
-  await fetch('/api/photo/' + id, { method:'POST',
+  await adminFetch('/api/photo/' + id, { method:'POST',
     headers:{'Content-Type':'application/json'}, body: JSON.stringify({hidden: hide}) });
   loadStats(); loadPhotos();
 }
@@ -378,7 +427,7 @@ document.addEventListener('keydown', function(e) {
 });
 
 async function updateVisionScore(photoId, field, value) {
-  await fetch('/api/vision/' + photoId, { method:'POST',
+  await adminFetch('/api/vision/' + photoId, { method:'POST',
     headers:{'Content-Type':'application/json'},
     body: JSON.stringify({field: field, value: value}) });
   var p = photos.find(function(x){return x.id===photoId});
@@ -545,21 +594,21 @@ async function createAlbum() {
   var name = prompt('Album-Name:');
   if (!name) return;
   var desc = prompt('Beschreibung (optional):', '');
-  await fetch('/api/albums/create', { method:'POST',
+  await adminFetch('/api/albums/create', { method:'POST',
     headers:{'Content-Type':'application/json'},
     body: JSON.stringify({name: name, description: desc || ''}) });
   loadStats();
 }
 
 async function deleteAlbum(id) {
-  await fetch('/api/albums/' + id + '/delete', { method:'POST',
+  await adminFetch('/api/albums/' + id + '/delete', { method:'POST',
     headers:{'Content-Type':'application/json'}, body: '{}' });
   if (filters.album == String(id)) delete filters.album;
   loadStats(); loadPhotos();
 }
 
 async function addToAlbum(albumId, photoIds) {
-  await fetch('/api/albums/' + albumId + '/add', { method:'POST',
+  await adminFetch('/api/albums/' + albumId + '/add', { method:'POST',
     headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ids: photoIds}) });
   loadStats();
@@ -734,7 +783,7 @@ async function toggleFav(id) {
 async function saveNotes(id) {
   var el = document.getElementById('dnotes');
   if (!el) return;
-  await fetch('/api/photo/' + id, { method:'POST',
+  await adminFetch('/api/photo/' + id, { method:'POST',
     headers:{'Content-Type':'application/json'}, body: JSON.stringify({notes:el.value}) });
 }
 
@@ -875,7 +924,7 @@ function showDetail(id) {
     var city = document.getElementById('geo-city').value.trim();
     var country = document.getElementById('geo-country').value.trim();
     geoSaveBtn.textContent = '...';
-    await fetch('/api/geo/' + p.id, {
+    await adminFetch('/api/geo/' + p.id, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({city: city, country: country})
@@ -929,7 +978,7 @@ function showDetail(id) {
       btn.textContent = 'Wird erstellt...';
       status.textContent = '';
       try {
-        var res = await fetch('/api/postcard/' + p.id + '?lang=' + lang + '&front=' + front, {method: 'POST'});
+        var res = await adminFetch('/api/postcard/' + p.id + '?lang=' + lang + '&front=' + front, {method: 'POST'});
         var data = await res.json();
         if (data.ok) {
           status.textContent = '\u2705 ' + data.path;
@@ -993,6 +1042,7 @@ function closeDetail() {
   renderView();
 }
 
+checkAuth();
 loadStats().then(loadPhotos);
 </script>
 </body>
