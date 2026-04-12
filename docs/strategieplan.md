@@ -62,9 +62,69 @@ _fotokatalog/
 - `/api/preview/{id}` — Wassergezeichnete Vorschau (öffentlich)
 - `/api/full/{id}` — Nur Admin, nie öffentlich
 
-### 1.3 Auth
+### 1.3 Auth & Rollen
 
-Minimal: Flask-Login mit einem Admin-User. Session-basiert.
+**Rollenmodell (alle Phasen):**
+
+| Feature | Public | Reviewer | Admin | Tenant |
+|---------|:------:|:--------:|:-----:|:------:|
+| Fotos anschauen (Previews) | ✅ | ✅ | ✅ | ✅ (nur seine Collection) |
+| Karte | ✅ | ✅ | ✅ | ✅ (nur seine Fotos) |
+| Filter (Ort, Tag) | ✅ | ✅ | ✅ | eingeschränkt |
+| ★ Rating abgeben | ❌ | ✅ → `user_ratings` | ✅ → `photos.rating` | ✅ → `user_ratings` |
+| ❤ Favorit/Merkliste | ❌ | ✅ → `user_ratings` | ✅ → `photos.is_favorite` | ✅ → `user_ratings` |
+| QS/PKS/DRS Scores sehen | ❌ | ❌ | ✅ | ✅ (read-only) |
+| Alben verwalten | ❌ | ❌ | ✅ | ✅ (nur seine Collection) |
+| Gibran-Texte sehen | ✅ (lesen) | ✅ | ✅ (editieren) | ✅ (lesen) |
+| Notizen bearbeiten | ❌ | ❌ | ✅ | ❌ |
+| Hidden/Versteckte | ❌ | ❌ | ✅ | ❌ |
+| Postkarten-PDF generieren | ❌ | ❌ | ✅ | ❌ |
+| EXIF/Druckinfo | ❌ | ❌ | ✅ | ❌ |
+
+**Zugangsmodell:**
+- **Public** → kein Login, sieht nur Gallery + Previews
+- **Reviewer** → Link mit Token (`?token=abc123`), kann ★ + ❤, Token = `session_id`
+- **Admin** → Login (username/password), volle UI
+- **Tenant** → Login oder Token, sieht nur seine Collection
+
+**Admin-Bewertung vs User-Bewertung:**
+- `photos.rating` / `photos.is_favorite` = Admin-Werte (lokal gepflegt, bei Deploy überschrieben)
+- `user_ratings` = Reviewer/Tenant-Bewertungen (nur in MariaDB/Prod, bleibt erhalten)
+- UI zeigt bei Admin: direkt editierbar. Bei allen anderen: eigene ★ über `user_ratings`
+
+### 1.3.1 Collection-Flow (Wie kommt ein Tenant zu seinen Fotos?)
+
+```
+Admin (lokal, SQLite)                    Prod (MariaDB)
+┌────────────────────────────┐           ┌─────────────────────────┐
+│ 1. Fotos kuratieren        │           │                         │
+│    (Rating, Tags, Alben)   │           │                         │
+│                            │           │                         │
+│ 2. Collection erstellen:   │           │                         │
+│    "Grimentz Winter 2026"  │           │                         │
+│    → Album mit best-of     │           │                         │
+│                            │           │                         │
+│ 3. Tenant anlegen:         │──deploy──→│ tenant: dorfladen-grim. │
+│    slug: dorfladen-grim.   │           │ collection_id: 7        │
+│    collection_id: Album 7  │           │ → sieht nur Album 7    │
+│                            │           │                         │
+│ 4. Export: SQLite→MariaDB  │──export──→│ photos + tenant_photos  │
+└────────────────────────────┘           └─────────────────────────┘
+```
+
+**Ablauf im Detail:**
+1. Admin erstellt Alben als "Collections" (z.B. "Grimentz Auswahl", "Anniviers Best-Of")
+2. Admin weist Fotos den Alben zu (bestehendes Album-Feature)
+3. In `tenants`-Tabelle: `collection_id` verweist auf ein Album
+4. Alternativ: `tenant_photos` für freie Zuordnung ohne Album
+5. Export-Script überträgt alles nach MariaDB
+6. Tenant-Login zeigt nur Fotos aus seiner `collection_id` / `tenant_photos`
+
+**Ergebnis:** Tenant "Dorfladen Grimentz" öffnet `fotokatalog.dev.local/t/dorfladen-grimentz`
+→ sieht 30 kuratierte Winterfotos aus dem Anniviers
+→ kann ★ bewerten + ❤ merken (→ `user_ratings`)
+→ sieht QS/PKS/DRS Scores (read-only)
+→ kann eigene Alben innerhalb seiner Collection verwalten
 
 ```sql
 CREATE TABLE IF NOT EXISTS users (
@@ -72,6 +132,7 @@ CREATE TABLE IF NOT EXISTS users (
     username      TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     role          TEXT DEFAULT 'admin',
+    tenant_id     INTEGER REFERENCES tenants(id),   -- NULL=Admin, sonst Tenant-Zuordnung
     created_at    TEXT DEFAULT (datetime('now'))
 );
 ```

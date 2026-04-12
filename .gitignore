@@ -9,6 +9,7 @@ fotokatalog.db-wal
 # Generated output
 _postkarten/
 _annotated/
+_previews/
 
 # Python
 __pycache__/

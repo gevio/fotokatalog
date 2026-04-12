@@ -609,6 +609,34 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except:
                 self.send_response(404)
                 self.end_headers()
+        elif path.startswith("/api/preview/"):
+            try:
+                photo_id = int(path.split("/")[-1])
+                preview_path = os.path.join(SCRIPT_DIR, "_previews", f"{photo_id}.jpg")
+                if os.path.exists(preview_path):
+                    with open(preview_path, "rb") as f:
+                        content = f.read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "image/jpeg")
+                    self.send_header("Cache-Control", "max-age=86400")
+                    self.send_header("Content-Length", len(content))
+                    self.end_headers()
+                    self.wfile.write(content)
+                else:
+                    # Fallback: Thumbnail-BLOB wenn kein Preview vorhanden
+                    thumb = get_thumbnail(photo_id)
+                    if thumb:
+                        self.send_response(200)
+                        self.send_header("Content-Type", "image/jpeg")
+                        self.send_header("Cache-Control", "max-age=3600")
+                        self.end_headers()
+                        self.wfile.write(thumb)
+                    else:
+                        self.send_response(404)
+                        self.end_headers()
+            except:
+                self.send_response(404)
+                self.end_headers()
         elif path == "/favicon.ico":
             self.send_response(204)
             self.end_headers()
