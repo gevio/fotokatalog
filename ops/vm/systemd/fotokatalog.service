@@ -1,0 +1,18 @@
+[Unit]
+Description=Fotokatalog WebUI Service
+After=network.target mariadb.service
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/srv/fotokatalog
+EnvironmentFile=/etc/fotokatalog/fotokatalog.env
+ExecStart=/srv/fotokatalog/.venv/bin/python /srv/fotokatalog/webui.py --db /srv/fotokatalog/fotokatalog.db --port 8080
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

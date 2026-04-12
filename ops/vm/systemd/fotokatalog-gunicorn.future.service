@@ -1,0 +1,26 @@
+[Unit]
+Description=Fotokatalog Gunicorn Service (future Flask migration)
+After=network.target mariadb.service
+
+[Service]
+Type=notify
+User=www-data
+Group=www-data
+RuntimeDirectory=fotokatalog
+WorkingDirectory=/srv/fotokatalog
+EnvironmentFile=/etc/fotokatalog/fotokatalog.env
+ExecStart=/srv/fotokatalog/.venv/bin/gunicorn \
+    --workers 2 \
+    --bind unix:/run/fotokatalog/gunicorn.sock \
+    --access-logfile - \
+    --error-logfile - \
+    app:create_app()
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
