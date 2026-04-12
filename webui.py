@@ -271,6 +271,12 @@ def get_stats():
     s["rated"] = conn.execute("SELECT COUNT(*) FROM photos WHERE rating>0").fetchone()[0]
     s["favorites"] = conn.execute("SELECT COUNT(*) FROM photos WHERE is_favorite=1").fetchone()[0]
     s["hidden"] = conn.execute("SELECT COUNT(*) FROM photos WHERE is_hidden=1").fetchone()[0]
+    try:
+        s["quality_high"] = conn.execute(
+            "SELECT COUNT(*) FROM vision_analysis WHERE quality_score>=4"
+        ).fetchone()[0]
+    except:
+        s["quality_high"] = 0
     s["cities"] = [dict(r) for r in conn.execute("SELECT * FROM v_location_stats LIMIT 50").fetchall()]
     s["tags"] = [dict(r) for r in conn.execute("""
         SELECT t.name, t.category, COUNT(pt.photo_id) as cnt

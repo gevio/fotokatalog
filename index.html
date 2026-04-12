@@ -527,9 +527,12 @@ async function loadStats() {
   var res = await fetch('/api/stats');
   stats = await res.json();
 
+  var publicTotal = isAdmin ? stats.total : stats.with_gps;
+  var publicLabel = isAdmin ? ' Fotos' : ' Fotos';
   document.getElementById('hstats').innerHTML =
-    '<span>' + stats.total + ' Fotos</span>' +
-    '<span>' + stats.with_gps + ' mit GPS</span>' +
+    '<span>' + publicTotal + ' Fotos</span>' +
+    (isAdmin ? '<span>' + stats.with_gps + ' mit GPS</span>' : '') +
+    (stats.quality_high ? '<span>' + stats.quality_high + ' Top-Qualit&auml;t</span>' : '') +
     '<span class="admin-only">' + stats.rated + ' bewertet</span>' +
     '<span class="admin-only">' + stats.favorites + ' Favoriten</span>' +
     (stats.hidden ? '<span class="admin-only">' + stats.hidden + ' versteckt</span>' : '');
