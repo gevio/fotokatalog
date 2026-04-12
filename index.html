@@ -143,6 +143,9 @@ button { font-family: inherit; cursor: pointer; }
   font-weight: 600; margin-left: auto; user-select: none; }
 .auth-badge.admin { background: var(--ok-bg); color: var(--ok); }
 .auth-badge.readonly { background: var(--warn-bg); color: var(--warn); }
+
+/* Admin-only: alles mit dieser Klasse wird fuer Non-Admins versteckt */
+body:not(.is-admin) .admin-only { display: none !important; }
 .card-check:checked::after { content: '\2713'; color: #fff; display: block; text-align: center;
   font-size: 14px; line-height: 18px; font-weight: 700; }
 .select-mode .card-check { display: block; }
@@ -151,6 +154,7 @@ button { font-family: inherit; cursor: pointer; }
   border-radius: 4px; border: none; background: rgba(0,0,0,.4); color: #fff;
   cursor: pointer; font-size: 13px; line-height: 22px; text-align: center; display: none; }
 .card:hover .card-hide { display: block; }
+body:not(.is-admin) .card-hide { display: none !important; }
 .card-hide:hover { background: var(--err); }
 
 .card-zoom { position: absolute; bottom: 6px; right: 8px; z-index: 2; width: 24px; height: 24px;
@@ -212,7 +216,7 @@ button { font-family: inherit; cursor: pointer; }
 
     <h3>Alben</h3>
     <div id="f-albums"></div>
-    <button id="btn-new-album" style="width:100%;margin-top:4px;padding:5px 8px;border:1px dashed var(--border);border-radius:6px;background:none;font-size:12px;color:var(--fg3);cursor:pointer">+ Neues Album</button>
+    <button id="btn-new-album" class="admin-only" style="width:100%;margin-top:4px;padding:5px 8px;border:1px dashed var(--border);border-radius:6px;background:none;font-size:12px;color:var(--fg3);cursor:pointer">+ Neues Album</button>
   </div>
 
   <div class="main">
@@ -305,12 +309,13 @@ async function checkAuth() {
     var res = await fetch('/api/auth/check', { headers: authHeaders() });
     var d = await res.json();
     isAdmin = d.admin;
+    document.body.classList.toggle('is-admin', isAdmin);
     var badge = document.getElementById('auth-badge');
     if (badge) {
       badge.textContent = isAdmin ? 'Admin' : (d.auth_required ? 'Read-Only' : 'Offen');
       badge.className = 'auth-badge ' + (isAdmin ? 'admin' : 'readonly');
     }
-  } catch(e) { isAdmin = false; }
+  } catch(e) { isAdmin = false; document.body.classList.remove('is-admin'); }
 }
 var detailMap = null, detailMapTimer = null;
 
@@ -525,9 +530,9 @@ async function loadStats() {
   document.getElementById('hstats').innerHTML =
     '<span>' + stats.total + ' Fotos</span>' +
     '<span>' + stats.with_gps + ' mit GPS</span>' +
-    '<span>' + stats.rated + ' bewertet</span>' +
-    '<span>' + stats.favorites + ' Favoriten</span>' +
-    (stats.hidden ? '<span>' + stats.hidden + ' versteckt</span>' : '');
+    '<span class="admin-only">' + stats.rated + ' bewertet</span>' +
+    '<span class="admin-only">' + stats.favorites + ' Favoriten</span>' +
+    (stats.hidden ? '<span class="admin-only">' + stats.hidden + ' versteckt</span>' : '');
 
   // City filters
   var cf = document.getElementById('f-city');
@@ -822,9 +827,13 @@ function showDetail(id) {
   h += '<div class="dsec"><h4>Aufnahme</h4>';
   h += '<div class="detail-row"><span class="lb">Datum</span><span class="vl">' + dt + '</span></div>';
   h += '<div class="detail-row"><span class="lb">Ort</span><span class="vl" style="display:flex;gap:4px;align-items:center">';
-  h += '<input id="geo-city" value="' + esc(p.city||'') + '" placeholder="Stadt" style="width:90px;padding:2px 5px;border:1px solid var(--border);border-radius:4px;font-size:12px;background:var(--bg)">';
-  h += '<input id="geo-country" value="' + esc(p.country||'') + '" placeholder="Land" style="width:70px;padding:2px 5px;border:1px solid var(--border);border-radius:4px;font-size:12px;background:var(--bg)">';
-  h += '<button id="geo-save" style="padding:2px 6px;border:1px solid var(--border);border-radius:4px;font-size:11px;background:var(--bg);cursor:pointer" title="Speichern">\u2714</button>';
+  if (isAdmin) {
+    h += '<input id="geo-city" value="' + esc(p.city||'') + '" placeholder="Stadt" style="width:90px;padding:2px 5px;border:1px solid var(--border);border-radius:4px;font-size:12px;background:var(--bg)">';
+    h += '<input id="geo-country" value="' + esc(p.country||'') + '" placeholder="Land" style="width:70px;padding:2px 5px;border:1px solid var(--border);border-radius:4px;font-size:12px;background:var(--bg)">';
+    h += '<button id="geo-save" style="padding:2px 6px;border:1px solid var(--border);border-radius:4px;font-size:11px;background:var(--bg);cursor:pointer" title="Speichern">\u2714</button>';
+  } else {
+    h += esc((p.city||'') + (p.country ? ', ' + p.country : ''));
+  }
   h += '</span></div>';
   if (p.altitude) h += '<div class="detail-row"><span class="lb">H\u00f6he</span><span class="vl">' + Math.round(p.altitude) + ' m</span></div>';
   if (p.camera_model) h += '<div class="detail-row"><span class="lb">Kamera</span><span class="vl">' + esc(p.camera_model) + '</span></div>';
@@ -842,10 +851,16 @@ function showDetail(id) {
   h += '</div>';
 
   if (p.quality_score) {
-    h += '<div class="dsec"><h4>KI-Bewertung (klick zum \u00c4ndern)</h4>';
-    h += '<div class="detail-row"><span class="lb">Qualit\u00e4t</span>' + mkScoreEdit(p.id, 'quality', p.quality_score, 'sq') + '</div>';
-    h += '<div class="detail-row"><span class="lb">Postkarte</span>' + mkScoreEdit(p.id, 'postcard', p.postcard_score, 'spk') + '</div>';
-    h += '<div class="detail-row"><span class="lb">Grossdruck</span>' + mkScoreEdit(p.id, 'print', p.print_score, 'spr') + '</div>';
+    h += '<div class="dsec"><h4>KI-Bewertung' + (isAdmin ? ' (klick zum \u00c4ndern)' : '') + '</h4>';
+    if (isAdmin) {
+      h += '<div class="detail-row"><span class="lb">Qualit\u00e4t</span>' + mkScoreEdit(p.id, 'quality', p.quality_score, 'sq') + '</div>';
+      h += '<div class="detail-row"><span class="lb">Postkarte</span>' + mkScoreEdit(p.id, 'postcard', p.postcard_score, 'spk') + '</div>';
+      h += '<div class="detail-row"><span class="lb">Grossdruck</span>' + mkScoreEdit(p.id, 'print', p.print_score, 'spr') + '</div>';
+    } else {
+      h += '<div class="detail-row"><span class="lb">Qualit\u00e4t</span><span class="vl">' + (p.quality_score||'-') + '/5</span></div>';
+      h += '<div class="detail-row"><span class="lb">Postkarte</span><span class="vl">' + (p.postcard_score||'-') + '/5</span></div>';
+      h += '<div class="detail-row"><span class="lb">Grossdruck</span><span class="vl">' + (p.print_score||'-') + '/5</span></div>';
+    }
     if (p.mood) h += '<div class="detail-row"><span class="lb">Stimmung</span><span class="vl">' + esc(p.mood) + '</span></div>';
     if (p.description) h += '<div class="vision-desc">\u201E' + esc(p.description) + '\u201C</div>';
     if (p.key_elements) h += '<div style="font-size:11px;color:var(--fg3);margin-top:4px">' + esc(p.key_elements) + '</div>';
@@ -865,21 +880,25 @@ function showDetail(id) {
 
   if (tagHtml) h += '<div class="dsec"><h4>Tags</h4><div>' + tagHtml + '</div></div>';
 
-  h += '<div class="dsec"><h4>Notizen</h4>';
-  h += '<textarea class="notes-input" id="dnotes" placeholder="Notiz hinzufuegen...">' + esc(p.notes||'') + '</textarea>';
-  h += '</div>';
+  if (isAdmin) {
+    h += '<div class="dsec"><h4>Notizen</h4>';
+    h += '<textarea class="notes-input" id="dnotes" placeholder="Notiz hinzufuegen...">' + esc(p.notes||'') + '</textarea>';
+    h += '</div>';
 
-  h += '<div class="dsec"><h4>Alben</h4>';
-  h += '<select id="detail-album-add" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg)">';
-  h += '<option value="">+ Zu Album hinzufuegen...</option>';
-  (stats.albums || []).forEach(function(a) {
-    h += '<option value="' + a.id + '">' + esc(a.name) + '</option>';
-  });
-  h += '</select>';
-  h += '</div>';
+    h += '<div class="dsec"><h4>Alben</h4>';
+    h += '<select id="detail-album-add" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg)">';
+    h += '<option value="">+ Zu Album hinzufuegen...</option>';
+    (stats.albums || []).forEach(function(a) {
+      h += '<option value="' + a.id + '">' + esc(a.name) + '</option>';
+    });
+    h += '</select>';
+    h += '</div>';
+  } else if (p.notes) {
+    h += '<div class="dsec"><h4>Notizen</h4><div style="font-size:12px;color:var(--fg2)">' + esc(p.notes) + '</div></div>';
+  }
 
-  // Postkarten-Button (fuer alle Fotos mit Gibran-Text)
-  if (p.gibran_de || p.gibran_fr || p.gibran_en) {
+  // Postkarten-Button (nur Admin, fuer Fotos mit Gibran-Text)
+  if (isAdmin && (p.gibran_de || p.gibran_fr || p.gibran_en)) {
     h += '<div style="margin-top:10px">';
     h += '<div style="display:flex;gap:6px;margin-bottom:6px">';
     h += '<select id="postcard-front" style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--bg);color:var(--fg)">';
