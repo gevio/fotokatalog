@@ -50,7 +50,7 @@ cd /srv/fotokatalog
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-pip install exifread geopy Pillow reportlab anthropic
+pip install exifread geopy Pillow reportlab anthropic pymysql
 ```
 
 ## 3) MariaDB auf der VM
@@ -142,7 +142,7 @@ Hinweis zu `curl`-Tests:
 
 Hinweis zum DB-Backend:
 - `webui.py` startet standardmaessig mit SQLite (`--db-backend sqlite`).
-- Der Schalter `--db-backend mariadb` ist als Migrationsvorbereitung eingebaut, aber die Query-Migration ist noch nicht abgeschlossen.
+- Der Schalter `--db-backend mariadb` ist jetzt als optionaler Testpfad verfuegbar (PyMySQL erforderlich).
 - Dadurch bleibt der lokale Windows-Start unveraendert kompatibel.
 
 Logs bei Problemen:

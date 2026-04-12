@@ -23,6 +23,72 @@ MARIADB_CONFIG = {}
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 API_KEY = None
 
+
+class DBRow(dict):
+    """Dict row that also supports index-based access like sqlite3.Row."""
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return list(self.values())[key]
+        return super().__getitem__(key)
+
+
+class DBCursorProxy:
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    @property
+    def lastrowid(self):
+        return getattr(self._cursor, "lastrowid", None)
+
+    @property
+    def rowcount(self):
+        return getattr(self._cursor, "rowcount", -1)
+
+    def _convert_row(self, row):
+        if row is None:
+            return None
+        if isinstance(row, sqlite3.Row):
+            return DBRow({k: row[k] for k in row.keys()})
+        if isinstance(row, dict):
+            return DBRow(row)
+        if isinstance(row, (list, tuple)):
+            cols = [d[0] for d in (self._cursor.description or [])]
+            return DBRow({cols[i]: row[i] for i in range(min(len(cols), len(row)))})
+        return row
+
+    def fetchone(self):
+        return self._convert_row(self._cursor.fetchone())
+
+    def fetchall(self):
+        return [self._convert_row(r) for r in self._cursor.fetchall()]
+
+
+class DBConnectionProxy:
+    def __init__(self, connection):
+        self._connection = connection
+
+    def _convert_query(self, query):
+        if DB_BACKEND != "mariadb":
+            return query
+        q = query.replace("INSERT OR IGNORE", "INSERT IGNORE")
+        return q.replace("?", "%s")
+
+    def execute(self, query, args=()):
+        params = tuple(args) if isinstance(args, list) else (args or ())
+        q = self._convert_query(query)
+        if DB_BACKEND == "sqlite":
+            cur = self._connection.execute(q, params)
+        else:
+            cur = self._connection.cursor()
+            cur.execute(q, params)
+        return DBCursorProxy(cur)
+
+    def commit(self):
+        self._connection.commit()
+
+    def close(self):
+        self._connection.close()
+
 def load_api_key():
     """Laedt ANTHROPIC_API_KEY aus .env Datei oder Umgebungsvariable."""
     global API_KEY
@@ -43,14 +109,27 @@ def load_api_key():
                     return
 
 def get_db():
-    if DB_BACKEND != "sqlite":
-        raise RuntimeError(
-            "MariaDB-Konfiguration ist vorbereitet, aber webui.py nutzt aktuell noch SQLite-Queries. "
-            "Bitte mit --db-backend sqlite starten, bis die Query-Migration abgeschlossen ist."
-        )
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    if DB_BACKEND == "sqlite":
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        return DBConnectionProxy(conn)
+
+    try:
+        import pymysql
+    except ImportError as e:
+        raise RuntimeError("MariaDB Backend verlangt 'pymysql' (pip install pymysql)") from e
+
+    conn = pymysql.connect(
+        host=MARIADB_CONFIG["host"],
+        port=MARIADB_CONFIG["port"],
+        user=MARIADB_CONFIG["user"],
+        password=MARIADB_CONFIG["password"],
+        database=MARIADB_CONFIG["database"],
+        charset="utf8mb4",
+        autocommit=False,
+        cursorclass=pymysql.cursors.DictCursor,
+    )
+    return DBConnectionProxy(conn)
 
 def load_db_config(args):
     """Laedt Datenbank-Konfiguration aus CLI/ENV mit sicherem Default auf SQLite."""
@@ -73,7 +152,17 @@ def load_db_config(args):
 def ensure_db_columns():
     """Fuegt fehlende Spalten hinzu (Migration)."""
     conn = get_db()
-    existing = [r["name"] for r in conn.execute("PRAGMA table_info(geo_data)").fetchall()]
+    if DB_BACKEND == "sqlite":
+        existing = [r["name"] for r in conn.execute("PRAGMA table_info(geo_data)").fetchall()]
+    else:
+        existing = [r["name"] for r in conn.execute(
+            """
+            SELECT COLUMN_NAME as name
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA=? AND TABLE_NAME='geo_data'
+            """,
+            (MARIADB_CONFIG["database"],)
+        ).fetchall()]
     for col in ["city_fr", "city_de", "city_en"]:
         if col not in existing:
             conn.execute(f"ALTER TABLE geo_data ADD COLUMN {col} TEXT")
@@ -124,6 +213,10 @@ def query_photos(params):
         "print": "va.print_score DESC, p.date_taken DESC",
     }.get(params.get("sort", "date_desc"), "p.date_taken DESC")
 
+    cat_tags_expr = "GROUP_CONCAT(DISTINCT t.category || ':' || t.name) as cat_tags"
+    if DB_BACKEND == "mariadb":
+        cat_tags_expr = "GROUP_CONCAT(DISTINCT CONCAT(t.category, ':', t.name)) as cat_tags"
+
     sql = """
         SELECT p.id, p.file_name, p.date_taken, p.rating, p.is_favorite, p.is_hidden,
                p.width, p.height, p.notes,
@@ -134,7 +227,7 @@ def query_photos(params):
                va.quality_score, va.postcard_score, va.print_score, va.mood, va.description, va.key_elements,
                va.gibran_de, va.gibran_fr, va.gibran_en, va.gibran_theme, va.gibran_ref,
                GROUP_CONCAT(DISTINCT t.name) as tag_list,
-               GROUP_CONCAT(DISTINCT t.category || ':' || t.name) as cat_tags
+               """ + cat_tags_expr + """
         FROM photos p
         LEFT JOIN geo_data g ON p.id = g.photo_id
         LEFT JOIN exif_data e ON p.id = e.photo_id
@@ -377,15 +470,19 @@ def bulk_update(data):
         conn.close()
         return
     placeholders = ",".join(["?"] * len(ids))
+    updated_total = 0
     if "hidden" in data:
         val = 1 if data["hidden"] else 0
-        conn.execute("UPDATE photos SET is_hidden=? WHERE id IN (" + placeholders + ")", [val] + ids)
+        cur = conn.execute("UPDATE photos SET is_hidden=? WHERE id IN (" + placeholders + ")", [val] + ids)
+        if cur.rowcount and cur.rowcount > 0:
+            updated_total += cur.rowcount
     if "rating" in data:
-        conn.execute("UPDATE photos SET rating=? WHERE id IN (" + placeholders + ")", [data["rating"]] + ids)
+        cur = conn.execute("UPDATE photos SET rating=? WHERE id IN (" + placeholders + ")", [data["rating"]] + ids)
+        if cur.rowcount and cur.rowcount > 0:
+            updated_total += cur.rowcount
     conn.commit()
-    cnt = conn.execute("SELECT changes()").fetchone()[0]
     conn.close()
-    return cnt
+    return updated_total
 
 def get_thumbnail(photo_id):
     conn = get_db()
@@ -576,9 +673,12 @@ if __name__ == "__main__":
             print("Datenbank nicht gefunden: " + DB_PATH)
             exit(1)
     else:
-        print("DB-Backend 'mariadb' ist konfiguriert, aber in webui.py noch nicht query-kompatibel.")
-        print("Bitte vorerst mit '--db-backend sqlite' starten. Windows-Setup bleibt damit unveraendert.")
-        exit(2)
+        try:
+            test_conn = get_db()
+            test_conn.close()
+        except Exception as e:
+            print("MariaDB-Verbindung fehlgeschlagen: " + str(e))
+            exit(2)
 
     # DB-Migration und API-Key
     ensure_db_columns()
