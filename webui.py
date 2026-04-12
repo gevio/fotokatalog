@@ -618,8 +618,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     self.end_headers()
                     self.wfile.write(thumb)
                 else:
-                    self.send_response(404)
-                    self.end_headers()
+                    # Fallback: Preview-Datei als Thumbnail
+                    preview_path = os.path.join(os.path.dirname(__file__), "_previews", f"{photo_id}.jpg")
+                    if os.path.exists(preview_path):
+                        self.send_response(200)
+                        self.send_header("Content-Type", "image/jpeg")
+                        self.send_header("Cache-Control", "max-age=3600")
+                        self.end_headers()
+                        with open(preview_path, "rb") as f:
+                            self.wfile.write(f.read())
+                    else:
+                        self.send_response(404)
+                        self.end_headers()
             except:
                 self.send_response(404)
                 self.end_headers()
