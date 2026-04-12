@@ -18,6 +18,8 @@ import urllib.request
 import webbrowser
 
 DB_PATH = "fotokatalog.db"
+DB_BACKEND = "sqlite"
+MARIADB_CONFIG = {}
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 API_KEY = None
 
@@ -41,9 +43,32 @@ def load_api_key():
                     return
 
 def get_db():
+    if DB_BACKEND != "sqlite":
+        raise RuntimeError(
+            "MariaDB-Konfiguration ist vorbereitet, aber webui.py nutzt aktuell noch SQLite-Queries. "
+            "Bitte mit --db-backend sqlite starten, bis die Query-Migration abgeschlossen ist."
+        )
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+def load_db_config(args):
+    """Laedt Datenbank-Konfiguration aus CLI/ENV mit sicherem Default auf SQLite."""
+    global DB_BACKEND, DB_PATH, MARIADB_CONFIG
+
+    backend_env = (os.environ.get("FOTOKATALOG_DB_BACKEND") or "sqlite").strip().lower()
+    backend_cli = (args.db_backend or backend_env).strip().lower()
+    DB_BACKEND = backend_cli if backend_cli in ("sqlite", "mariadb") else "sqlite"
+
+    DB_PATH = args.db
+
+    MARIADB_CONFIG = {
+        "host": os.environ.get("FOTOKATALOG_DB_HOST", "127.0.0.1"),
+        "port": int(os.environ.get("FOTOKATALOG_DB_PORT", "3306")),
+        "database": os.environ.get("FOTOKATALOG_DB_NAME", "fotokatalog"),
+        "user": os.environ.get("FOTOKATALOG_DB_USER", "fotokatalog"),
+        "password": os.environ.get("FOTOKATALOG_DB_PASSWORD", ""),
+    }
 
 def ensure_db_columns():
     """Fuegt fehlende Spalten hinzu (Migration)."""
@@ -540,13 +565,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fotokatalog Web-UI")
     parser.add_argument("--db", default="fotokatalog.db")
+    parser.add_argument("--db-backend", default=None, choices=["sqlite", "mariadb"])
     parser.add_argument("--port", type=int, default=8080)
     args = parser.parse_args()
 
-    DB_PATH = args.db
-    if not os.path.exists(DB_PATH):
-        print("Datenbank nicht gefunden: " + DB_PATH)
-        exit(1)
+    load_db_config(args)
+
+    if DB_BACKEND == "sqlite":
+        if not os.path.exists(DB_PATH):
+            print("Datenbank nicht gefunden: " + DB_PATH)
+            exit(1)
+    else:
+        print("DB-Backend 'mariadb' ist konfiguriert, aber in webui.py noch nicht query-kompatibel.")
+        print("Bitte vorerst mit '--db-backend sqlite' starten. Windows-Setup bleibt damit unveraendert.")
+        exit(2)
 
     # DB-Migration und API-Key
     ensure_db_columns()
@@ -557,7 +589,11 @@ if __name__ == "__main__":
     print("")
     print("  FOTOKATALOG - Web-UI")
     print("  " + url)
-    print("  Datenbank: " + DB_PATH)
+    print("  DB-Backend: " + DB_BACKEND)
+    if DB_BACKEND == "sqlite":
+        print("  Datenbank: " + DB_PATH)
+    else:
+        print("  MariaDB: {user}@{host}:{port}/{database}".format(**MARIADB_CONFIG))
     print("  API-Key: " + ("geladen" if API_KEY else "NICHT GEFUNDEN (.env oder $ANTHROPIC_API_KEY)"))
     print("  Beenden mit Ctrl+C")
     print("")

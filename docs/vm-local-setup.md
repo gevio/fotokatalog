@@ -135,6 +135,15 @@ ping fotokatalog.dev.local
 Im Browser auf Windows:
 - http://fotokatalog.dev.local/
 
+Hinweis zu `curl`-Tests:
+- Bei `curl ... | head -n 5` oder `head -n 10` kann `curl: (23) Failure writing output to destination` erscheinen.
+- Das ist in diesem Kontext normal, weil `head` die Pipe frueh schliesst. Kein Fehler der Anwendung.
+
+Hinweis zum DB-Backend:
+- `webui.py` startet standardmaessig mit SQLite (`--db-backend sqlite`).
+- Der Schalter `--db-backend mariadb` ist als Migrationsvorbereitung eingebaut, aber die Query-Migration ist noch nicht abgeschlossen.
+- Dadurch bleibt der lokale Windows-Start unveraendert kompatibel.
+
 Logs bei Problemen:
 
 ```bash
