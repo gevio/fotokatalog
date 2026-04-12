@@ -31,20 +31,19 @@ TABLES = [
         "name": "photos",
         "select": """SELECT id, file_path, file_name, file_size, file_hash,
                      media_type, width, height, date_taken, date_imported,
-                     rating, is_favorite, is_hidden, notes
+                     rating, is_favorite, is_hidden, notes, thumbnail
                      FROM photos""",
-        # Kein thumbnail - zu gross, nicht noetig auf Prod
         "insert": """INSERT INTO photos (id, file_path, file_name, file_size, file_hash,
                      media_type, width, height, date_taken, date_imported,
-                     rating, is_favorite, is_hidden, notes)
-                     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                     rating, is_favorite, is_hidden, notes, thumbnail)
+                     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                      ON DUPLICATE KEY UPDATE
                      file_name=VALUES(file_name), file_size=VALUES(file_size),
                      file_hash=VALUES(file_hash), media_type=VALUES(media_type),
                      width=VALUES(width), height=VALUES(height),
                      date_taken=VALUES(date_taken), rating=VALUES(rating),
                      is_favorite=VALUES(is_favorite), is_hidden=VALUES(is_hidden),
-                     notes=VALUES(notes)""",
+                     notes=VALUES(notes), thumbnail=VALUES(thumbnail)""",
     },
     {
         "name": "exif_data",
