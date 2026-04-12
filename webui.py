@@ -316,18 +316,66 @@ def delete_album(album_id):
     conn.commit()
     conn.close()
 
-def update_photo(photo_id, data):
+def update_photo(photo_id, data, session_id=None):
     conn = get_db()
-    if "rating" in data:
-        conn.execute("UPDATE photos SET rating=? WHERE id=?", (data["rating"], photo_id))
-    if "favorite" in data:
-        conn.execute("UPDATE photos SET is_favorite=? WHERE id=?", (1 if data["favorite"] else 0, photo_id))
+    # MariaDB/Prod: rating+favorite gehen auf user_ratings (Admin-Werte bleiben)
+    if DB_BACKEND == "mariadb" and session_id and ("rating" in data or "favorite" in data):
+        upsert_user_rating(photo_id, session_id, data)
+    else:
+        # SQLite/Lokal: direkt auf photos (Admin-Modus)
+        if "rating" in data:
+            conn.execute("UPDATE photos SET rating=? WHERE id=?", (data["rating"], photo_id))
+        if "favorite" in data:
+            conn.execute("UPDATE photos SET is_favorite=? WHERE id=?", (1 if data["favorite"] else 0, photo_id))
     if "hidden" in data:
         conn.execute("UPDATE photos SET is_hidden=? WHERE id=?", (1 if data["hidden"] else 0, photo_id))
     if "notes" in data:
         conn.execute("UPDATE photos SET notes=? WHERE id=?", (data["notes"], photo_id))
     conn.commit()
     conn.close()
+
+
+def upsert_user_rating(photo_id, session_id, data):
+    """Speichert User-Bewertung in user_ratings (nur MariaDB/Prod)."""
+    conn = get_db()
+    rating = data.get("rating")
+    fav = 1 if data.get("favorite") else 0 if "favorite" in data else None
+
+    # UPSERT: existiert schon -> update, sonst insert
+    if rating is not None and fav is not None:
+        conn.execute(
+            """INSERT INTO user_ratings (photo_id, session_id, rating, is_favorite)
+               VALUES (%s, %s, %s, %s)
+               ON DUPLICATE KEY UPDATE rating=VALUES(rating), is_favorite=VALUES(is_favorite)""",
+            (photo_id, session_id, rating, fav))
+    elif rating is not None:
+        conn.execute(
+            """INSERT INTO user_ratings (photo_id, session_id, rating)
+               VALUES (%s, %s, %s)
+               ON DUPLICATE KEY UPDATE rating=VALUES(rating)""",
+            (photo_id, session_id, rating))
+    elif fav is not None:
+        conn.execute(
+            """INSERT INTO user_ratings (photo_id, session_id, is_favorite)
+               VALUES (%s, %s, %s)
+               ON DUPLICATE KEY UPDATE is_favorite=VALUES(is_favorite)""",
+            (photo_id, session_id, fav))
+    conn.commit()
+    conn.close()
+
+
+def get_session_id(headers):
+    """Extrahiert oder generiert eine Session-ID aus dem Cookie."""
+    import hashlib
+    cookie_header = headers.get("Cookie", "")
+    for part in cookie_header.split(";"):
+        part = part.strip()
+        if part.startswith("fk_session="):
+            return part.split("=", 1)[1]
+    # Fallback: IP + User-Agent Hash
+    remote = headers.get("X-Forwarded-For", headers.get("Host", "unknown"))
+    ua = headers.get("User-Agent", "")
+    return hashlib.sha256((remote + ua).encode()).hexdigest()[:16]
 
 def geocode_place(city, country=""):
     """Forward-Geocoding: Ortsname -> Koordinaten via Nominatim."""
@@ -612,7 +660,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "error": str(e)})
         elif parsed.path.startswith("/api/photo/"):
             photo_id = int(parsed.path.split("/")[-1])
-            update_photo(photo_id, data)
+            session_id = get_session_id(self.headers) if DB_BACKEND == "mariadb" else None
+            update_photo(photo_id, data, session_id=session_id)
             self.send_json({"ok": True})
         elif parsed.path.startswith("/api/geo/"):
             photo_id = int(parsed.path.split("/")[-1])
