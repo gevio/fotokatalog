@@ -97,6 +97,7 @@ sudo nano /etc/fotokatalog/fotokatalog.env
 ```
 
 Werte anpassen:
+- FOTOKATALOG_DB_BACKEND=sqlite
 - FOTOKATALOG_DB_PASSWORD
 - ANTHROPIC_API_KEY
 
