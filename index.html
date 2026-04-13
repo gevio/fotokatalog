@@ -188,18 +188,77 @@ body:not(.is-admin) .card-hide { display: none !important; }
 .vb-fill-q { background: #9333ea; }
 .vb-fill-pk { background: var(--ok); }
 .vb-fill-pr { background: var(--accent); }
+
+/* Hamburger button — hidden on desktop */
+.hamburger { display: none; background: none; border: none; font-size: 24px; color: var(--fg); padding: 4px 8px; cursor: pointer; line-height: 1; }
+
+/* Sidebar backdrop */
+.sidebar-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 49; }
+.sidebar-backdrop.open { display: block; }
+
+/* Lightbox nav arrows */
+.lb-nav { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,.15); border: none;
+  color: #fff; font-size: 36px; width: 52px; height: 72px; cursor: pointer; z-index: 201; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+.lb-nav:hover { background: rgba(255,255,255,.3); }
+.lb-prev { left: 12px; }
+.lb-next { right: 12px; }
+
+/* ── Mobile: < 768px ─────────────────────── */
+@media (max-width: 768px) {
+  .app { grid-template-columns: 1fr; }
+  .hamburger { display: block; }
+  .sidebar { position: fixed; top: 0; left: 0; width: 280px; height: 100vh; z-index: 50;
+    transform: translateX(-100%); transition: transform .25s ease; }
+  .sidebar.open { transform: translateX(0); }
+  .header { gap: 8px; padding: 10px 12px; flex-wrap: wrap; }
+  .header h1 { font-size: 16px; }
+  .header .stats { gap: 6px; flex-wrap: wrap; font-size: 11px; }
+  .main { padding: 10px; }
+  .main.detail-open { margin-right: 0; }
+  .detail { width: 100vw; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  .card-thumb { height: 110px; }
+  .toolbar { gap: 6px; }
+  .toolbar select, .toolbar label { font-size: 12px; }
+  .count { display: none; }
+  .stars span { font-size: 22px !important; padding: 4px; }
+  .vscore { font-size: 11px; padding: 2px 5px; }
+  .score-btn { width: 32px; height: 32px; font-size: 13px; }
+  .auth-badge { padding: 4px 12px; font-size: 12px; }
+  .filter-btn { padding: 8px 10px; font-size: 14px; }
+  .view-tab { padding: 8px 16px; font-size: 13px; }
+  .search-box { padding: 10px 12px; font-size: 14px; }
+  .lb-nav { width: 44px; height: 60px; font-size: 28px; }
+}
+
+/* ── Phone: < 480px ──────────────────────── */
+@media (max-width: 480px) {
+  .grid { grid-template-columns: repeat(2, 1fr); gap: 6px; }
+  .card-thumb { height: 100px; }
+  .detail h2 { font-size: 14px; }
+  .detail-row { font-size: 12px; }
+  .dsec h4 { font-size: 10px; }
+}
+
+/* Touch devices: show zoom button always */
+@media (hover: none) {
+  .card-zoom { display: block; }
+}
 </style>
 </head>
 <body>
 
 <div class="app">
   <div class="header">
+    <button class="hamburger" id="hamburger" aria-label="Menü">&#9776;</button>
     <h1>Fotokatalog</h1>
     <div class="stats" id="hstats"></div>
     <span id="auth-badge" class="auth-badge readonly" onclick="showTokenDialog()" title="Klick: Token eingeben"></span>
   </div>
 
-  <div class="sidebar">
+  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+  <div class="sidebar" id="sidebar">
     <input class="search-box" placeholder="Suche..." id="search">
 
     <h3>Orte</h3>
@@ -266,7 +325,9 @@ body:not(.is-admin) .card-hide { display: none !important; }
 
 <div class="lightbox" id="lightbox" onclick="closeLightbox()">
   <button class="lightbox-close">&times;</button>
-  <img id="lightbox-img" src="">
+  <button class="lb-nav lb-prev" onclick="event.stopPropagation();navLightbox(-1)">&#10094;</button>
+  <img id="lightbox-img" src="" onclick="event.stopPropagation()">
+  <button class="lb-nav lb-next" onclick="event.stopPropagation();navLightbox(1)">&#10095;</button>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9/dist/leaflet.min.js"></script>
@@ -412,6 +473,7 @@ async function hidePhoto(id, hide) {
 }
 
 function openLightbox(photoId) {
+  currentLightboxId = photoId;
   var lb = document.getElementById('lightbox');
   var img = document.getElementById('lightbox-img');
   // Preview (wassergezeichnet) bevorzugen, Fallback auf Original
@@ -427,9 +489,59 @@ function openLightbox(photoId) {
 function closeLightbox() {
   document.getElementById('lightbox').classList.remove('open');
 }
+var currentLightboxId = null;
+function navLightbox(dir) {
+  if (!currentLightboxId) return;
+  var idx = photos.findIndex(function(p){return p.id===currentLightboxId});
+  if (idx < 0) return;
+  var next = idx + dir;
+  if (next < 0) next = photos.length - 1;
+  if (next >= photos.length) next = 0;
+  currentLightboxId = photos[next].id;
+  openLightbox(currentLightboxId);
+}
+
+// Swipe support for lightbox
+(function(){
+  var lb = document.getElementById('lightbox');
+  var sx = 0, sy = 0;
+  lb.addEventListener('touchstart', function(e){
+    if (e.touches.length === 1) { sx = e.touches[0].clientX; sy = e.touches[0].clientY; }
+  }, {passive: true});
+  lb.addEventListener('touchend', function(e){
+    if (e.changedTouches.length === 1) {
+      var dx = e.changedTouches[0].clientX - sx;
+      var dy = e.changedTouches[0].clientY - sy;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+        e.preventDefault();
+        navLightbox(dx < 0 ? 1 : -1);
+      }
+    }
+  });
+})();
+
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') closeLightbox();
+  if (e.key === 'ArrowRight') navLightbox(1);
+  if (e.key === 'ArrowLeft') navLightbox(-1);
 });
+
+// Hamburger / sidebar toggle
+(function(){
+  var btn = document.getElementById('hamburger');
+  var sb = document.getElementById('sidebar');
+  var bd = document.getElementById('sidebar-backdrop');
+  function toggle() { sb.classList.toggle('open'); bd.classList.toggle('open'); }
+  function close() { sb.classList.remove('open'); bd.classList.remove('open'); }
+  btn.addEventListener('click', toggle);
+  bd.addEventListener('click', close);
+  // Close sidebar when a filter is tapped on mobile
+  sb.addEventListener('click', function(e) {
+    if (e.target.classList.contains('filter-btn') && window.innerWidth <= 768) {
+      setTimeout(close, 150);
+    }
+  });
+})();
 
 async function updateVisionScore(photoId, field, value) {
   await adminFetch('/api/vision/' + photoId, { method:'POST',
