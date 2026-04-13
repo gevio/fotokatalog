@@ -296,10 +296,10 @@ body:not(.is-admin) .card-hide { display: none !important; }
       <label style="font-size:12px;color:var(--fg2);display:flex;align-items:center;gap:4px">
         <input type="checkbox" id="fav-only"> Nur Favoriten
       </label>
-      <label class="hidden-toggle">
+      <label class="hidden-toggle admin-only">
         <input type="checkbox" id="show-hidden"> Versteckte zeigen
       </label>
-      <button class="view-tab" id="btn-select" style="margin-left:auto">Auswaehlen</button>
+      <button class="view-tab admin-only" id="btn-select" style="margin-left:auto">Auswaehlen</button>
       <span class="count" id="pcnt"></span>
     </div>
     <div class="bulk-bar" id="bulk-bar">
@@ -476,14 +476,20 @@ function openLightbox(photoId) {
   currentLightboxId = photoId;
   var lb = document.getElementById('lightbox');
   var img = document.getElementById('lightbox-img');
-  // Preview (wassergezeichnet) bevorzugen, Fallback auf Original
-  img.onerror = function() {
-    if (img.src.indexOf('/api/preview/') !== -1) {
-      img.onerror = null;
-      img.src = '/api/full/' + photoId;
-    }
-  };
-  img.src = '/api/preview/' + photoId;
+  if (isAdmin) {
+    // Admin: Originalbild, Fallback auf Preview
+    img.onerror = function() {
+      if (img.src.indexOf('/api/full/') !== -1) {
+        img.onerror = null;
+        img.src = '/api/preview/' + photoId;
+      }
+    };
+    img.src = '/api/full/' + photoId;
+  } else {
+    // Read-Only: Preview
+    img.onerror = null;
+    img.src = '/api/preview/' + photoId;
+  }
   lb.classList.add('open');
 }
 function closeLightbox() {
