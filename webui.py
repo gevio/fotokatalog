@@ -734,6 +734,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             qparams = dict(urllib.parse.parse_qsl(parsed.query))
             lang = qparams.get("lang", "fr")
             front_style = qparams.get("front", "clean")
+            fmt_key = qparams.get("format", "auto")
+            if fmt_key not in ("auto", "dinlang", "a6", "a6hoch"):
+                fmt_key = "auto"
             try:
                 from postcard_pdf import HAS_REPORTLAB, get_postcard_photos, create_postcard, register_fonts, FORMATS
                 if not HAS_REPORTLAB:
@@ -742,9 +745,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 fonts = register_fonts()
                 photos_list = get_postcard_photos(DB_PATH, lang=lang, photo_id=photo_id, min_score=0)
                 if photos_list:
+                    photo = photos_list[0]
+                    if not os.path.exists(photo.get("file_path", "")):
+                        preview_path = os.path.join(SCRIPT_DIR, "_previews", str(photo["id"]) + ".jpg")
+                        if os.path.exists(preview_path):
+                            photo["file_path"] = preview_path
                     output_dir = os.path.join(SCRIPT_DIR, "_postkarten")
                     os.makedirs(output_dir, exist_ok=True)
-                    pdf_path = create_postcard(photos_list[0], "auto", lang, "P. Kueck", output_dir, fonts, front_style)
+                    pdf_path = create_postcard(photo, fmt_key, lang, "P. Kueck", output_dir, fonts, front_style)
                     if pdf_path:
                         self.send_json({"ok": True, "path": pdf_path})
                     else:

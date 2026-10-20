@@ -1027,6 +1027,12 @@ function showDetail(id) {
     h += '<option value="location">Bild + Ort</option>';
     h += '<option value="text" selected>Bild + Spruch</option>';
     h += '</select>';
+    h += '<select id="postcard-format" style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--bg);color:var(--fg)">';
+    h += '<option value="auto" selected>Auto-Format</option>';
+    h += '<option value="dinlang">DIN lang (210\u00d7105)</option>';
+    h += '<option value="a6">A6 (148\u00d7105)</option>';
+    h += '<option value="a6hoch">A6 hoch (105\u00d7148)</option>';
+    h += '</select>';
     h += '</div>';
     h += '<div style="display:flex;gap:6px">';
     h += '<button data-postcard="fr" style="flex:1;padding:8px 12px;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;background:#e8593c;color:#fff">Postkarte FR</button>';
@@ -1118,7 +1124,8 @@ function showDetail(id) {
       btn.textContent = 'Wird erstellt...';
       status.textContent = '';
       try {
-        var res = await adminFetch('/api/postcard/' + p.id + '?lang=' + lang + '&front=' + front, {method: 'POST'});
+        var fmt = document.getElementById('postcard-format').value;
+        var res = await adminFetch('/api/postcard/' + p.id + '?lang=' + lang + '&front=' + front + '&format=' + fmt, {method: 'POST'});
         var data = await res.json();
         if (data.ok) {
           status.textContent = '\u2705 ' + data.path;

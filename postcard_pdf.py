@@ -91,20 +91,25 @@ def register_fonts():
             "C:/Windows/Fonts/garamond.ttf",
             "C:/Windows/Fonts/GARA.TTF",
             "C:/Windows/Fonts/EBGaramond-Regular.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
         ],
         "GaramondItalic": [
             "C:/Windows/Fonts/garamonditalic.ttf",
             "C:/Windows/Fonts/GARAIT.TTF",
             "C:/Windows/Fonts/EBGaramond-Italic.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
         ],
         "Calibri": [
             "C:/Windows/Fonts/calibri.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         ],
         "CalibriBold": [
             "C:/Windows/Fonts/calibrib.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         ],
         "CalibriLight": [
             "C:/Windows/Fonts/calibril.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         ],
     }
 
