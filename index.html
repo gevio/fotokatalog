@@ -115,6 +115,18 @@ button { font-family: inherit; cursor: pointer; }
   cursor: pointer; background: none; border: none; opacity: .7; }
 .lightbox-close:hover { opacity: 1; }
 
+/* PDF Viewer Modal */
+.pdf-modal { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,.85);
+  z-index: 300; display: none; align-items: center; justify-content: center; flex-direction: column; }
+.pdf-modal.open { display: flex; }
+.pdf-modal iframe { width: 90vw; height: 85vh; border: none; border-radius: 8px; background: #fff; }
+.pdf-modal-bar { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; }
+.pdf-modal-bar button { padding: 8px 16px; border: none; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; }
+.pdf-modal-close { background: rgba(255,255,255,.15); color: #fff; }
+.pdf-modal-close:hover { background: rgba(255,255,255,.25); }
+.pdf-modal-download { background: #e8593c; color: #fff; }
+.pdf-modal-download:hover { background: #d04a2f; }
+
 /* Editable scores */
 .score-edit { display: inline-flex; gap: 2px; }
 .score-btn { width: 22px; height: 22px; border-radius: 4px; border: 1px solid var(--border);
@@ -323,6 +335,15 @@ body:not(.is-admin) .card-hide { display: none !important; }
   <div id="dcontent"></div>
 </div>
 
+<div class="pdf-modal" id="pdf-modal" onclick="closePdfModal()">
+  <div class="pdf-modal-bar" onclick="event.stopPropagation()">
+    <span id="pdf-modal-title" style="color:#fff;font-size:14px;font-weight:500"></span>
+    <a id="pdf-modal-dl" href="#" download style="text-decoration:none"><button class="pdf-modal-download">Download</button></a>
+    <button class="pdf-modal-close" onclick="closePdfModal()">Schliessen</button>
+  </div>
+  <iframe id="pdf-modal-frame" src="" onclick="event.stopPropagation()"></iframe>
+</div>
+
 <div class="lightbox" id="lightbox" onclick="closeLightbox()">
   <button class="lightbox-close">&times;</button>
   <button class="lb-nav lb-prev" onclick="event.stopPropagation();navLightbox(-1)">&#10094;</button>
@@ -335,6 +356,23 @@ body:not(.is-admin) .card-hide { display: none !important; }
 var photos = [], stats = {}, filters = {}, curView = 'grid', selId = null, map = null, markers = [], dtimer;
 var selectMode = false, selectedIds = new Set();
 var adminToken = localStorage.getItem('fk_admin_token') || '';
+
+function openPdfModal(url, title) {
+  var m = document.getElementById('pdf-modal');
+  var frame = document.getElementById('pdf-modal-frame');
+  var dl = document.getElementById('pdf-modal-dl');
+  var t = document.getElementById('pdf-modal-title');
+  var authUrl = url + (url.indexOf('?') > -1 ? '&' : '?') + '_token=' + encodeURIComponent(adminToken);
+  frame.src = authUrl;
+  dl.href = authUrl;
+  t.textContent = title || 'Postkarte';
+  m.classList.add('open');
+}
+function closePdfModal() {
+  var m = document.getElementById('pdf-modal');
+  m.classList.remove('open');
+  document.getElementById('pdf-modal-frame').src = '';
+}
 var isAdmin = false;
 
 // Auth-Header fuer schreibende Requests
@@ -1128,8 +1166,20 @@ function showDetail(id) {
         var res = await adminFetch('/api/postcard/' + p.id + '?lang=' + lang + '&front=' + front + '&format=' + fmt, {method: 'POST'});
         var data = await res.json();
         if (data.ok) {
-          status.textContent = '\u2705 ' + data.path;
-          btn.textContent = btn.dataset.postcard === 'fr' ? 'Postkarte FR' : btn.dataset.postcard === 'de' ? 'Postkarte DE' : 'Postkarte EN';
+          var labels = {fr: 'Postkarte FR', de: 'Postkarte DE', en: 'Postkarte EN'};
+          btn.textContent = labels[btn.dataset.postcard] || btn.textContent;
+          if (data.url) {
+            var lbl = labels[btn.dataset.postcard] || 'PDF';
+            status.innerHTML = '';
+            var link = document.createElement('a');
+            link.href = '#';
+            link.style.cssText = 'color:var(--accent);text-decoration:underline;cursor:pointer';
+            link.textContent = '\u2705 PDF anzeigen';
+            link.addEventListener('click', function(e) { e.preventDefault(); openPdfModal(data.url, lbl); });
+            status.appendChild(link);
+          } else {
+            status.textContent = '\u2705 ' + data.path;
+          }
         } else {
           status.textContent = '\u274c ' + (data.error || 'Fehler');
         }

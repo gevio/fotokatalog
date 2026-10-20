@@ -578,6 +578,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         auth = self.headers.get("Authorization", "")
         if auth.startswith("Bearer ") and auth[7:] == ADMIN_TOKEN:
             return True
+        parsed = urllib.parse.urlparse(self.path)
+        qtoken = dict(urllib.parse.parse_qsl(parsed.query)).get("_token", "")
+        if qtoken and qtoken == ADMIN_TOKEN:
+            return True
         return False
 
     def send_unauthorized(self):
@@ -707,6 +711,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif path == "/api/auth/check":
             is_admin = self.check_admin()
             self.send_json({"ok": True, "admin": is_admin, "auth_required": bool(ADMIN_TOKEN)})
+        elif path.startswith("/api/postcard-pdf/"):
+            if not self.check_admin():
+                self.send_unauthorized()
+                return
+            fname = os.path.basename(path.split("/api/postcard-pdf/")[1])
+            pdf_path = os.path.join(SCRIPT_DIR, "_postkarten", fname)
+            if os.path.exists(pdf_path) and fname.endswith(".pdf"):
+                with open(pdf_path, "rb") as f:
+                    data = f.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/pdf")
+                self.send_header("Content-Disposition", f"inline; filename=\"{fname}\"")
+                self.send_header("Content-Length", len(data))
+                self.end_headers()
+                self.wfile.write(data)
+            else:
+                self.send_response(404)
+                self.end_headers()
         else:
             self.send_response(404)
             self.end_headers()
@@ -754,7 +776,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     os.makedirs(output_dir, exist_ok=True)
                     pdf_path = create_postcard(photo, fmt_key, lang, "P. Kueck", output_dir, fonts, front_style)
                     if pdf_path:
-                        self.send_json({"ok": True, "path": pdf_path})
+                        pdf_fname = os.path.basename(pdf_path)
+                        self.send_json({"ok": True, "path": pdf_path, "url": "/api/postcard-pdf/" + pdf_fname})
                     else:
                         self.send_json({"ok": False, "error": "PDF-Erstellung fehlgeschlagen"})
                 else:
