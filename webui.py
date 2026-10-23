@@ -454,7 +454,7 @@ Antwort NUR als JSON:
 
     try:
         payload = json.dumps({
-            "model": "claude-sonnet-4-20250514",
+            "model": "claude-haiku-5-5-20250514",
             "max_tokens": 150,
             "messages": [{"role": "user", "content": prompt}]
         }).encode("utf-8")

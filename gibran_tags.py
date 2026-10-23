@@ -26,7 +26,7 @@ import urllib.error
 
 DB_PATH = "fotokatalog.db"
 API_URL = "https://api.anthropic.com/v1/messages"
-MODEL = "claude-sonnet-4-20250514"
+MODEL = "claude-sonnet-5-5-20250514"
 
 # Gibran-Referenzpassagen (Auswahl der staerksten fuer Landschaft/Natur)
 GIBRAN_EXCERPTS = """

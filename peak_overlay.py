@@ -36,7 +36,7 @@ except ImportError:
 
 DB_PATH = "fotokatalog.db"
 API_URL = "https://api.anthropic.com/v1/messages"
-MODEL = "claude-sonnet-4-20250514"
+MODEL = "claude-sonnet-5-5-20250514"
 OUTPUT_DIR = "_annotated"
 
 PEAK_SYSTEM_PROMPT = """Du bist ein Experte fuer Alpentopografie und Bergidentifikation.
