@@ -12,6 +12,7 @@ import http.server
 import json
 import sqlite3
 import os
+import sys
 import argparse
 import urllib.parse
 import urllib.request
@@ -571,10 +572,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def check_admin(self):
         """Prueft Admin-Token. Gibt True zurueck wenn autorisiert.
-        Ohne ADMIN_TOKEN ist alles offen (lokal/dev).
+        Ohne ADMIN_TOKEN wird Admin-Zugriff verweigert (fail-closed).
         Mit ADMIN_TOKEN muss Bearer-Token stimmen."""
         if not ADMIN_TOKEN:
-            return True  # kein Token konfiguriert = offen
+            sys.stderr.write("FEHLER: FOTOKATALOG_ADMIN_TOKEN nicht gesetzt - Admin-Zugriff wird verweigert (fail-closed)\n")
+            return False
         auth = self.headers.get("Authorization", "")
         if auth.startswith("Bearer ") and auth[7:] == ADMIN_TOKEN:
             return True
